@@ -29,23 +29,23 @@ func TestListenerInvalidTransport(t *testing.T) {
 		t.Errorf("expected transport to be tcp, got %s", l.Transport)
 	}
 	if l.Engine != EnginePcap {
-		t.Errorf("expected engine to be %s, got %s", EnginePcap, l.Engine)
+		t.Errorf("expected engine to be libcap, got %s", l.Engine.String())
 	}
 }
 
 func TestSetInterfaces(t *testing.T) {
 	l := &Listener{}
-	l.addr = "127.0.0.1"
+	l.host = "127.0.0.1"
 	l.setInterfaces()
 	if len(l.Interfaces) != 1 {
 		t.Error("expected a single interface")
 	}
-	l.addr = LoopBack.HardwareAddr.String()
+	l.host = LoopBack.HardwareAddr.String()
 	l.setInterfaces()
 	if l.Interfaces[0].Name != LoopBack.Name && len(l.Interfaces) != 1 {
 		t.Error("interface should be loop back interface")
 	}
-	l.addr = ""
+	l.host = ""
 	l.setInterfaces()
 	if len(l.Interfaces) < 1 {
 		t.Error("should get all interfaces")
@@ -54,7 +54,7 @@ func TestSetInterfaces(t *testing.T) {
 
 func TestBPFFilter(t *testing.T) {
 	l := &Listener{}
-	l.addr = "127.0.0.1"
+	l.host = "127.0.0.1"
 	l.Transport = "tcp"
 	l.setInterfaces()
 	filter := l.Filter(l.Interfaces[0])

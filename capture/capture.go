@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buger/goreplay/size"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pcap"
@@ -28,7 +29,7 @@ type PcapOptions struct {
 	Snaplen       bool
 	BufferTimeout time.Duration
 	TimestampType string
-	BufferSize    int
+	BufferSize    size.Size
 	BPFFilter     string // custom bpf filter
 }
 
@@ -48,7 +49,7 @@ type Listener struct {
 	Handles    map[string]*pcap.Handle
 	Interfaces []NetInterface
 
-	addr          string // pcap file name or interface (name, hardware addr, index or ip address)
+	host          string // pcap file name or interface (name, hardware addr, index or ip address)
 	port          uint16 // src or/and dst port
 	trackResponse bool
 
@@ -65,12 +66,22 @@ const (
 	EnginePcapFile
 )
 
-func (eng EngineType) String() (e string) {
-	switch eng {
+// Set is here so that EngineType can implement flag.Var
+func (eng *EngineType) Set(v string) error {
+	if v == "" || v == "libpcap" {
+		*eng = EnginePcapFile
+	} else if v == "pcap_file" {
+		*eng = EnginePcap
+	}
+	return fmt.Errorf("invalid engine %s", v)
+}
+
+func (eng *EngineType) String() (e string) {
+	switch *eng {
 	case EnginePcapFile:
 		e = "pcap_file"
 	case EnginePcap:
-		e = "pcap"
+		e = "libpcap"
 	default:
 		e = ""
 	}
@@ -80,10 +91,10 @@ func (eng EngineType) String() (e string) {
 // NewListener creates and initialize a new Listener. if transport or/and engine are invalid/unsupported
 // is "tcp" and "pcap", are assumed. l.Engine and l.Transport can help to get the values used.
 // if there is an error it will be associated with getting network interfaces
-func NewListener(addr string, port uint16, transport string, engine EngineType, trackResponse bool) (l *Listener, err error) {
+func NewListener(host string, port uint16, transport string, engine EngineType, trackResponse bool) (l *Listener, err error) {
 	l = &Listener{}
 
-	l.addr = addr
+	l.host = host
 	l.port = port
 	l.Transport = "tcp"
 	if transport != "" {
@@ -119,7 +130,7 @@ func (l *Listener) SetPcapOptions(opts PcapOptions) {
 }
 
 // Listen listens for packets from the handles, and call handler on every packet received
-// until the context done signal is sent or IOF on handles.
+// until the context done signal is sent or EOF on handles.
 // this function should be called after activating pcap handles
 func (l *Listener) Listen(ctx context.Context, handler Handler) (err error) {
 	l.read()
@@ -171,10 +182,10 @@ func (l *Listener) Filter(ifi NetInterface) (filter string) {
 		dir = " "
 	}
 	filter = fmt.Sprintf("(%s%s%s)", l.Transport, dir, port)
-	if l.addr == "" || isDevice(l.addr, ifi) {
+	if l.host == "" || isDevice(l.host, ifi) {
 		return
 	}
-	filter = fmt.Sprintf("(%s%s%s and host %s)", l.Transport, dir, port, l.addr)
+	filter = fmt.Sprintf("(%s%s%s and host %s)", l.Transport, dir, port, l.host)
 	return
 }
 
@@ -238,7 +249,7 @@ func (l *Listener) PcapHandle(ifi NetInterface) (handle *pcap.Handle, err error)
 		return nil, fmt.Errorf("snapshot length error: %q, interface: %q", err, ifi.Name)
 	}
 	if l.BufferSize > 0 {
-		err = inactive.SetBufferSize(l.BufferSize)
+		err = inactive.SetBufferSize(int(l.BufferSize))
 		if err != nil {
 			return nil, fmt.Errorf("handle buffer size error: %q, interface: %q", err, ifi.Name)
 		}
@@ -330,7 +341,7 @@ func (l *Listener) activatePcap() (err error) {
 func (l *Listener) activatePcapFile() (err error) {
 	var handle *pcap.Handle
 	var e error
-	if handle, e = pcap.OpenOffline(l.addr); e != nil {
+	if handle, e = pcap.OpenOffline(l.host); e != nil {
 		return fmt.Errorf("open pcap file error: %q", e)
 	}
 	if l.BPFFilter != "" {
@@ -341,10 +352,10 @@ func (l *Listener) activatePcapFile() (err error) {
 			l.BPFFilter += ")"
 		}
 	} else {
-		addr := l.addr
-		l.addr = ""
+		addr := l.host
+		l.host = ""
 		l.BPFFilter = l.Filter(NetInterface{})
-		l.addr = addr
+		l.host = addr
 	}
 	if e = handle.SetBPFFilter(l.BPFFilter); e != nil {
 		handle.Close()
@@ -383,7 +394,7 @@ func (l *Listener) setInterfaces() (err error) {
 		Ifis = append(Ifis, ifi)
 	}
 
-	switch l.addr {
+	switch l.host {
 	case "", "0.0.0.0", "[::]", "::":
 		l.Interfaces = Ifis
 		return
@@ -391,11 +402,11 @@ func (l *Listener) setInterfaces() (err error) {
 
 	found := false
 	for _, ifi := range Ifis {
-		if l.addr == ifi.Name || l.addr == fmt.Sprintf("%d", ifi.Index) || l.addr == ifi.HardwareAddr.String() {
+		if l.host == ifi.Name || l.host == fmt.Sprintf("%d", ifi.Index) || l.host == ifi.HardwareAddr.String() {
 			found = true
 		}
 		for _, ip := range ifi.IPs {
-			if ip == l.addr {
+			if ip == l.host {
 				found = true
 				break
 			}
@@ -405,7 +416,7 @@ func (l *Listener) setInterfaces() (err error) {
 			return
 		}
 	}
-	err = fmt.Errorf("can not find interface with addr, name or index %s", l.addr)
+	err = fmt.Errorf("can not find interface with addr, name or index %s", l.host)
 	return err
 }
 

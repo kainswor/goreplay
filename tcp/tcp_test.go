@@ -137,6 +137,26 @@ func TestPacketWithMissingMessage(t *testing.T) {
 	<-waiter
 }
 
+func TestMessageUUID(t *testing.T) {
+	m1 := &Message{}
+	pckt1 := &Packet{}
+	pckt1.TCP = new(layers.TCP)
+	pckt1.Seq = 2
+	m1.packets = []*Packet{pckt1}
+	m1.IsIncoming = true
+	m1.SrcAddr = "src"
+	m1.DstAddr = "dst"
+	m2 := &Message{}
+	pckt2 := &Packet{}
+	pckt2.TCP = new(layers.TCP)
+	pckt2.Ack = pckt1.Seq + 1
+	m2.SrcAddr = "dst"
+	m2.DstAddr = "src"
+	m2.packets = []*Packet{pckt2}
+	if string(m1.UUID()) != string(m2.UUID()) {
+		t.Errorf("expected %s, to equal %s", m1.UUID(), m2.UUID())
+	}
+}
 func BenchmarkMessageReassembling(b *testing.B) {
 	var mssg = make(chan *Message, 1)
 	if b.N < 3 {

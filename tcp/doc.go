@@ -9,18 +9,17 @@ example:
 
 import "github.com/buger/goreplay/tcp"
 
-maxMessageWait := time.Second*5
-maxMessageSize := 5 << 20
+messageExpire := time.Second*5
+maxSize := 5 << 20
 
-debugger := func(debugLevel int, data ...interface){...} // debugger can also be nil
-messageHandler := func(mssg *tcp.Message){...}
+debugger := func(debugLevel int, data ...interface{}){} // debugger can also be nil
+messageHandler := func(mssg *tcp.Message){}
 
-mssgPool := tcp.NewMessagePool(maxMessageSize, maxMessageWait, debugger, messageHandler)
-....
+mssgPool := tcp.NewMessagePool(maxMessageSize, messageExpire, debugger, messageHandler)
 listener.Listen(ctx, mssgPool.Handler)
 
 debugLevel in debugger function indicates the priority of the logs, the bigger the number the lower
-the priority. errors are signified by debug level 4, message dispatch 5, and received packets is 6.
+the priority. errors are signified by debug level 4 for errors, 5 for discarded packets, and 6 for received packets.
 
 */
 package tcp // import github.com/buger/goreplay/tcp

@@ -2,11 +2,15 @@ package tcp
 
 import (
 	"bytes"
+	"crypto/sha1"
+	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"sort"
 	"sync"
 	"time"
 
+	"github.com/buger/goreplay/size"
 	"github.com/google/gopacket"
 )
 
@@ -45,7 +49,37 @@ func NewMessage(isIncoming bool, srcAddr, dstAddr string, ipVersion uint8) (m *M
 	return
 }
 
-// Add add new packet to this message in ascending order by sequence number
+// UUID probably the unique id of a message(presumably both request and response)
+func (m *Message) UUID() []byte {
+	m.Lock()
+	defer m.Unlock()
+	if len(m.packets) == 0 {
+		return nil
+	}
+	var syn uint32 // the initial sequence number of a request
+	var src, dst string
+	if m.IsIncoming {
+		syn = m.packets[0].Seq
+		src = m.SrcAddr
+		dst = m.DstAddr
+	} else {
+		syn = m.packets[0].Ack - 1
+		src = m.DstAddr
+		dst = m.SrcAddr
+	}
+
+	length := 4 + len(src) + len(dst)
+	uuid := make([]byte, length)
+	binary.BigEndian.PutUint32(uuid, syn)
+	copy(uuid[4:], src)
+	copy(uuid[4:][len(src):], dst)
+	sha := sha1.Sum(uuid)
+	uuid = make([]byte, 40)
+	hex.Encode(uuid, sha[:])
+
+	return uuid
+}
+
 func (m *Message) add(pckt *Packet) {
 	m.Length += len(pckt.Payload)
 	m.LostData += int(pckt.Lost)
@@ -98,21 +132,21 @@ type Debugger func(int, ...interface{})
 // The outgoing message is identified by  server.addr and dst.addr e.g: localhost:80=internet:45785.
 type MessagePool struct {
 	sync.Mutex
-	debug   Debugger
-	maxSize int // maximum message size, default 5mb
-	pool    map[string]*Message
-	handler Handler
-	maxWait time.Duration // the maximum time to wait for the final packet, minimum is 100ms
+	debug         Debugger
+	maxSize       size.Size // maximum message size, default 5mb
+	pool          map[string]*Message
+	handler       Handler
+	messageExpire time.Duration // the maximum time to wait for the final packet, minimum is 100ms
 }
 
 // NewMessagePool returns a new instance of message pool
-func NewMessagePool(maxSize int, maxWait time.Duration, debugger Debugger, handler Handler) (pool *MessagePool) {
+func NewMessagePool(maxSize size.Size, messageExpire time.Duration, debugger Debugger, handler Handler) (pool *MessagePool) {
 	pool = new(MessagePool)
 	pool.debug = debugger
 	pool.handler = handler
-	pool.maxWait = time.Millisecond * 100
-	if pool.maxWait < maxWait {
-		pool.maxWait = maxWait
+	pool.messageExpire = time.Millisecond * 100
+	if pool.messageExpire < messageExpire {
+		pool.messageExpire = messageExpire
 	}
 	pool.maxSize = maxSize
 	if pool.maxSize < 1 {
@@ -126,11 +160,11 @@ func NewMessagePool(maxSize int, maxWait time.Duration, debugger Debugger, handl
 func (pool *MessagePool) Handler(packet gopacket.Packet) {
 	pckt, err := ParsePacket(packet)
 	if err != nil && len(pckt.Payload) == 0 {
-		go pool.say(4, fmt.Sprintf("error decoding packet at %s:\n%s", pckt.Timestamp, err))
+		go pool.say(4, fmt.Sprintf("error decoding packet(%dByte):%s\n", packet.Metadata().CaptureLength, err))
 		return
 	}
 	if pckt.RST {
-		go pool.say(4, fmt.Sprintf("RST flag sent to %s from %s", pckt.Src(), pckt.Dst()))
+		go pool.say(5, fmt.Sprintf("RST flag sent to %s from %s\n", pckt.Src(), pckt.Dst()))
 		return
 	}
 	pool.Lock()
@@ -140,7 +174,7 @@ func (pool *MessagePool) Handler(packet gopacket.Packet) {
 		isIncoming := pckt.SYN && !pckt.ACK
 		key := srcAddr
 		if !isIncoming {
-			key = fmt.Sprintf("%s=%s", key, pckt.Dst())
+			key += ("=" + pckt.Dst())
 		}
 		m := NewMessage(isIncoming, srcAddr, pckt.Dst(), pckt.Version())
 		m.MSS, m.WindowScale = pckt.SYNOptions()
@@ -149,17 +183,17 @@ func (pool *MessagePool) Handler(packet gopacket.Packet) {
 	}
 	m, ok := pool.pool[srcAddr]
 	if !ok {
-		m, ok = pool.pool[fmt.Sprintf("%s=%s", srcAddr, pckt.Dst())]
+		m, ok = pool.pool[srcAddr+"="+pckt.Dst()]
 	}
 	pool.Unlock()
 	if ok {
 		ok = pool.addPacket(m, pckt)
 		if ok {
-			go pool.say(6, fmt.Sprintf("message: %s, packet:\n%s", m.SrcAddr, pckt))
+			go pool.say(6, fmt.Sprintf("message: %s, packet:\n%s\n", m.SrcAddr, pckt))
 			return
 		}
 	}
-	go pool.say(4, fmt.Sprintf("packet with length(%d) discarded due to missing associated message", len(pckt.Payload)))
+	go pool.say(5, fmt.Sprintf("packet from %s with length(%dB) discarded\n", srcAddr, len(pckt.Payload)))
 
 }
 
@@ -171,7 +205,6 @@ func (pool *MessagePool) dispatch(key string, m *Message) {
 	m.Sort()
 	m.done = nil
 	m.Unlock()
-	go pool.say(5, fmt.Sprintf("message from %s to %s dispatched", m.SrcAddr, m.DstAddr))
 	pool.handler(m)
 }
 
@@ -182,7 +215,7 @@ func (pool *MessagePool) addPacket(m *Message, pckt *Packet) bool {
 	if m.done == nil {
 		return false
 	}
-	if m.Length+len(pckt.Payload) >= pool.maxSize {
+	if m.Length+len(pckt.Payload) >= int(pool.maxSize) {
 		m.done <- true
 		return false
 	}
@@ -191,7 +224,7 @@ func (pool *MessagePool) addPacket(m *Message, pckt *Packet) bool {
 }
 
 func (pool *MessagePool) timer(m *Message, key string) {
-	t := time.NewTicker(pool.maxWait)
+	t := time.NewTicker(pool.messageExpire)
 	defer t.Stop()
 	select {
 	case <-m.done:
