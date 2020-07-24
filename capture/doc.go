@@ -28,6 +28,7 @@ case err := <- errCh:
 	// handle error
 case <-quit:
 	//
+case <- l.Reading: // if we have started reading
 }
 
 */

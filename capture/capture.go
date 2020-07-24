@@ -16,7 +16,9 @@ import (
 )
 
 // TransportLayers current supported transport layers
-var TransportLayers = [...]string{"tcp"}
+var TransportLayers = [...]string{
+	"tcp",
+}
 
 // Handler is a function that is used to handle packets
 type Handler func(gopacket.Packet)
@@ -48,6 +50,7 @@ type Listener struct {
 	Activate   func() error // function is used to activate the engine. it must be called before reading packets
 	Handles    map[string]*pcap.Handle
 	Interfaces []NetInterface
+	Reading    chan bool // this channel is closed when the listener has started reading packets
 
 	host          string // pcap file name or interface (name, hardware addr, index or ip address)
 	port          uint16 // src or/and dst port
@@ -68,12 +71,15 @@ const (
 
 // Set is here so that EngineType can implement flag.Var
 func (eng *EngineType) Set(v string) error {
-	if v == "" || v == "libpcap" {
-		*eng = EnginePcapFile
-	} else if v == "pcap_file" {
+	switch v {
+	case "", "libcap":
 		*eng = EnginePcap
+	case "pcap_file":
+		*eng = EnginePcapFile
+	default:
+		return fmt.Errorf("invalid engine %s", v)
 	}
-	return fmt.Errorf("invalid engine %s", v)
+	return nil
 }
 
 func (eng *EngineType) String() (e string) {
@@ -109,6 +115,7 @@ func NewListener(host string, port uint16, transport string, engine EngineType, 
 	l.trackResponse = trackResponse
 	l.packets = make(chan gopacket.Packet, 1000)
 	l.quit = make(chan bool, 1)
+	l.Reading = make(chan bool, 1)
 	l.Activate = l.activatePcap
 	l.Engine = EnginePcap
 	if engine == EnginePcapFile {
@@ -137,6 +144,8 @@ func (l *Listener) Listen(ctx context.Context, handler Handler) (err error) {
 	done := ctx.Done()
 	var p gopacket.Packet
 	var ok bool
+	l.Reading <- true
+	close(l.Reading)
 	for {
 		select {
 		case <-done:

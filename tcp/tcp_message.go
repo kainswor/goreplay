@@ -23,6 +23,8 @@ type Stats struct {
 	IPversion   uint8
 	WindowScale uint16
 	MSS         uint16 // maximum segment size
+	SrcAddr     string
+	DstAddr     string
 }
 
 // Message is the representation of a tcp message
@@ -31,8 +33,6 @@ type Message struct {
 	Stats
 
 	IsIncoming bool
-	SrcAddr    string
-	DstAddr    string
 
 	packets []*Packet
 	done    chan bool

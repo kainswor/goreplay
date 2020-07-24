@@ -1,4 +1,4 @@
-// Package byteutils probvides helpers for working with byte slices
+// Package byteutils provides helpers for working with byte slices
 package byteutils
 
 // Cut elements from slice for a given range

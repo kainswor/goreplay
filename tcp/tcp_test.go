@@ -109,7 +109,7 @@ func TestMessageRSTFlag(t *testing.T) {
 	packet.Data()[34+13] = 4
 	waiter := make(chan bool, 1)
 	p := NewMessagePool(1<<20, 0, func(level int, a ...interface{}) {
-		if level != 4 {
+		if level != 5 {
 			t.Error("RST FLAG wrong level")
 		}
 		if d, ok := a[0].(string); !ok || d[0] != 'R' {
@@ -125,7 +125,7 @@ func TestPacketWithMissingMessage(t *testing.T) {
 	packet := randomPackets(1, 1, 5)[0]
 	waiter := make(chan bool, 1)
 	p := NewMessagePool(1<<20, 0, func(level int, a ...interface{}) {
-		if level != 4 {
+		if level != 5 {
 			t.Error("wrong debug level")
 		}
 		if d, ok := a[0].(string); !ok || d[:6] != "packet" {
