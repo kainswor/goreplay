@@ -57,7 +57,7 @@ func prettifyHTTP(p []byte) []byte {
 		g, err := gzip.NewReader(buf)
 
 		if err != nil {
-			Debug("[Prettifier] GZIP encoding error:", err)
+			Debug(1, "[Prettifier] GZIP encoding error:", err)
 			return []byte{}
 		}
 

@@ -22,14 +22,17 @@ import (
 	"github.com/buger/goreplay/byteutils"
 )
 
-// In HTTP newline defined by 2 bytes (for both windows and *nix support)
-var CLRF = []byte("\r\n")
+// CRLF In HTTP newline defined by 2 bytes (for both windows and *nix support)
+var CRLF = []byte("\r\n")
 
-// New line acts as separator: end of Headers or Body (in some cases)
+// EmptyLine acts as separator: end of Headers or Body (in some cases)
 var EmptyLine = []byte("\r\n\r\n")
 
-// Separator for Header line. Header looks like: `HeaderName: value`
+// HeaderDelim Separator for Header line. Header looks like: `HeaderName: value`
 var HeaderDelim = []byte(": ")
+
+// Server100Continue ...
+var Server100Continue = []byte("100 Continue\r\n\r\n")
 
 // MIMEHeadersEndPos finds end of the Headers section, which should end with empty line.
 func MIMEHeadersEndPos(payload []byte) int {
@@ -39,7 +42,7 @@ func MIMEHeadersEndPos(payload []byte) int {
 // MIMEHeadersStartPos finds start of Headers section
 // It just finds position of second line (first contains location and method).
 func MIMEHeadersStartPos(payload []byte) int {
-	return bytes.Index(payload, CLRF) + 2 // Find first line end
+	return bytes.Index(payload, CRLF) + 2 // Find first line end
 }
 
 func headerIndex(payload []byte, name []byte) int {
@@ -59,7 +62,6 @@ func headerIndex(payload []byte, name []byte) int {
 		i++
 
 	}
-	return -1
 }
 
 // header return value and positions of header/value start/end.
@@ -102,7 +104,7 @@ func header(payload []byte, name []byte) (value []byte, headerStart, headerEnd, 
 	return
 }
 
-// Works only with ASCII
+// HeadersEqual Works only with ASCII
 func HeadersEqual(h1 []byte, h2 []byte) bool {
 	if len(h1) != len(h2) {
 		return false
@@ -121,7 +123,7 @@ func HeadersEqual(h1 []byte, h2 []byte) bool {
 	return true
 }
 
-// Parsing headers from multiple payloads
+// ParseHeaders Parsing headers from multiple payloads
 func ParseHeaders(payloads [][]byte, cb func(header []byte, value []byte) bool) {
 	hS := [2]int{0, 0}   // header start
 	hE := [2]int{-1, -1} // header end
@@ -256,14 +258,14 @@ func AddHeader(payload, name, value []byte) []byte {
 	copy(header[0:], name)
 	copy(header[len(name):], HeaderDelim)
 	copy(header[len(name)+2:], value)
-	copy(header[len(header)-2:], CLRF)
+	copy(header[len(header)-2:], CRLF)
 
 	mimeStart := MIMEHeadersStartPos(payload)
 
 	return byteutils.Insert(payload, mimeStart, header)
 }
 
-// DelHeader takes http payload and removes header name from headers section
+// DeleteHeader takes http payload and removes header name from headers section
 // Returns modified request payload
 func DeleteHeader(payload, name []byte) []byte {
 	_, hs, he, _, _ := header(payload, name)

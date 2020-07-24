@@ -1,7 +1,6 @@
 package main
 
 import (
-	"log"
 	"runtime"
 	"strconv"
 	"time"
@@ -26,7 +25,7 @@ func NewGorStat(statName string, rateMs int) (s *GorStat) {
 	s.count = 0
 
 	if Settings.stats {
-		log.Println(s.statName + ":latest,mean,max,count,count/second,gcount")
+		Debug(0, "\n", s.statName+":latest,mean,max,count,count/second,gcount")
 		go s.reportStats()
 	}
 	return
@@ -58,7 +57,7 @@ func (s *GorStat) String() string {
 
 func (s *GorStat) reportStats() {
 	for {
-		log.Println(s)
+		Debug(0, "\n", s)
 		s.Reset()
 		time.Sleep(time.Duration(s.rateMs) * time.Millisecond)
 	}

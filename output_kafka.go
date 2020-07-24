@@ -49,10 +49,8 @@ func NewKafkaOutput(address string, config *KafkaConfig) io.Writer {
 		producer: producer,
 	}
 
-	if Settings.verbose {
-		// Start infinite loop for tracking errors for kafka producer.
-		go o.ErrorHandler()
-	}
+	// Start infinite loop for tracking errors for kafka producer.
+	go o.ErrorHandler()
 
 	return o
 }
@@ -60,7 +58,7 @@ func NewKafkaOutput(address string, config *KafkaConfig) io.Writer {
 // ErrorHandler should receive errors
 func (o *KafkaOutput) ErrorHandler() {
 	for err := range o.producer.Errors() {
-		log.Println("Failed to write access log entry:", err)
+		Debug(1, "Failed to write access log entry:", err)
 	}
 }
 

@@ -298,11 +298,10 @@ func TestHTTPClientServerNoKeepAlive(t *testing.T) {
 			}
 
 			buf := make([]byte, 4096)
-			reqLen, err := conn.Read(buf)
+			_, err = conn.Read(buf)
 			if err != nil {
 				t.Error("Error reading:", err.Error())
 			}
-			Debug("Received: ", string(buf[0:reqLen]))
 			conn.Write([]byte("OK"))
 
 			// No keep-alive connections

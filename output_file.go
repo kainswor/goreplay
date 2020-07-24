@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/buger/goreplay/size"
 )
 
 var dateFileNameFuncs = map[string]func(*FileOutput) string{
@@ -32,8 +34,8 @@ var dateFileNameFuncs = map[string]func(*FileOutput) string{
 // FileOutputConfig ...
 type FileOutputConfig struct {
 	flushInterval     time.Duration
-	sizeLimit         int64
-	outputFileMaxSize int64
+	sizeLimit         size.Size
+	outputFileMaxSize size.Size
 	queueLimit        int64
 	append            bool
 	bufferPath        string
@@ -53,7 +55,7 @@ type FileOutput struct {
 	currentID      []byte
 	payloadType    []byte
 	closed         bool
-	totalFileSize  int64
+	totalFileSize  size.Size
 
 	config *FileOutputConfig
 }
@@ -230,7 +232,7 @@ func (o *FileOutput) Write(data []byte) (n int, err error) {
 
 	n += nSeparator
 
-	o.totalFileSize += int64(n)
+	o.totalFileSize += size.Size(n)
 	o.queueLength++
 
 	if Settings.outputFileConfig.outputFileMaxSize > 0 && o.totalFileSize >= Settings.outputFileConfig.outputFileMaxSize {

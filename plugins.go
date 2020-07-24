@@ -4,7 +4,6 @@ import (
 	"io"
 	"reflect"
 	"strings"
-	"sync"
 )
 
 // InOutPlugins struct for holding references to plugins
@@ -13,11 +12,6 @@ type InOutPlugins struct {
 	Outputs []io.Writer
 	All     []interface{}
 }
-
-var pluginMu sync.Mutex
-
-// Plugins holds all the plugin objects
-var plugins *InOutPlugins = new(InOutPlugins)
 
 // extractLimitOptions detects if plugin get called with limiter support
 // Returns address and limit
@@ -33,8 +27,8 @@ func extractLimitOptions(options string) (string, string) {
 
 // Automatically detects type of plugin and initialize it
 //
-// See this article if curious about relfect stuff below: http://blog.burntsushi.net/type-parametric-functions-golang
-func registerPlugin(constructor interface{}, options ...interface{}) {
+// See this article if curious about reflect stuff below: http://blog.burntsushi.net/type-parametric-functions-golang
+func (plugins *InOutPlugins) registerPlugin(constructor interface{}, options ...interface{}) {
 	var path, limit string
 	vc := reflect.ValueOf(constructor)
 
@@ -77,60 +71,52 @@ func registerPlugin(constructor interface{}, options ...interface{}) {
 	plugins.All = append(plugins.All, plugin)
 }
 
-// InitPlugins specify and initialize all available plugins
-func InitPlugins() *InOutPlugins {
-	pluginMu.Lock()
-	defer pluginMu.Unlock()
+// NewPlugins specify and initialize all available plugins
+func NewPlugins() *InOutPlugins {
+	plugins := new(InOutPlugins)
 
 	for _, options := range Settings.inputDummy {
-		registerPlugin(NewDummyInput, options)
+		plugins.registerPlugin(NewDummyInput, options)
 	}
 
 	for range Settings.outputDummy {
-		registerPlugin(NewDummyOutput)
+		plugins.registerPlugin(NewDummyOutput)
 	}
 
 	if Settings.outputStdout {
-		registerPlugin(NewDummyOutput)
+		plugins.registerPlugin(NewDummyOutput)
 	}
 
 	if Settings.outputNull {
-		registerPlugin(NewNullOutput)
-	}
-
-	engine := EnginePcap
-	if Settings.inputRAWEngine == "raw_socket" {
-		engine = EngineRawSocket
-	} else if Settings.inputRAWEngine == "pcap_file" {
-		engine = EnginePcapFile
+		plugins.registerPlugin(NewNullOutput)
 	}
 
 	for _, options := range Settings.inputRAW {
-		registerPlugin(NewRAWInput, options, engine, Settings.inputRAWTrackResponse, Settings.inputRAWExpire, Settings.inputRAWRealIPHeader, Settings.inputRAWProtocol, Settings.inputRAWBpfFilter, Settings.inputRAWTimestampType, Settings.inputRAWBufferSize)
+		plugins.registerPlugin(NewRAWInput, options, Settings.RAWInputConfig)
 	}
 
 	for _, options := range Settings.inputTCP {
-		registerPlugin(NewTCPInput, options, &Settings.inputTCPConfig)
+		plugins.registerPlugin(NewTCPInput, options, &Settings.inputTCPConfig)
 	}
 
 	for _, options := range Settings.outputTCP {
-		registerPlugin(NewTCPOutput, options, &Settings.outputTCPConfig)
+		plugins.registerPlugin(NewTCPOutput, options, &Settings.outputTCPConfig)
 	}
 
 	for _, options := range Settings.inputFile {
-		registerPlugin(NewFileInput, options, Settings.inputFileLoop)
+		plugins.registerPlugin(NewFileInput, options, Settings.inputFileLoop)
 	}
 
 	for _, path := range Settings.outputFile {
 		if strings.HasPrefix(path, "s3://") {
-			registerPlugin(NewS3Output, path, &Settings.outputFileConfig)
+			plugins.registerPlugin(NewS3Output, path, &Settings.outputFileConfig)
 		} else {
-			registerPlugin(NewFileOutput, path, &Settings.outputFileConfig)
+			plugins.registerPlugin(NewFileOutput, path, &Settings.outputFileConfig)
 		}
 	}
 
 	for _, options := range Settings.inputHTTP {
-		registerPlugin(NewHTTPInput, options)
+		plugins.registerPlugin(NewHTTPInput, options)
 	}
 
 	// If we explicitly set Host header http output should not rewrite it
@@ -143,19 +129,19 @@ func InitPlugins() *InOutPlugins {
 	}
 
 	for _, options := range Settings.outputHTTP {
-		registerPlugin(NewHTTPOutput, options, &Settings.outputHTTPConfig)
+		plugins.registerPlugin(NewHTTPOutput, options, &Settings.outputHTTPConfig)
 	}
 
 	for _, options := range Settings.outputBinary {
-		registerPlugin(NewBinaryOutput, options, &Settings.outputBinaryConfig)
+		plugins.registerPlugin(NewBinaryOutput, options, &Settings.outputBinaryConfig)
 	}
 
 	if Settings.outputKafkaConfig.host != "" && Settings.outputKafkaConfig.topic != "" {
-		registerPlugin(NewKafkaOutput, "", &Settings.outputKafkaConfig)
+		plugins.registerPlugin(NewKafkaOutput, "", &Settings.outputKafkaConfig)
 	}
 
 	if Settings.inputKafkaConfig.host != "" && Settings.inputKafkaConfig.topic != "" {
-		registerPlugin(NewKafkaInput, "", &Settings.inputKafkaConfig)
+		plugins.registerPlugin(NewKafkaInput, "", &Settings.inputKafkaConfig)
 	}
 
 	return plugins
