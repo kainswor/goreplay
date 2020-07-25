@@ -33,12 +33,12 @@ var dateFileNameFuncs = map[string]func(*FileOutput) string{
 
 // FileOutputConfig ...
 type FileOutputConfig struct {
-	flushInterval     time.Duration
-	sizeLimit         size.Size
-	outputFileMaxSize size.Size
-	queueLimit        int64
-	append            bool
-	bufferPath        string
+	FlushInterval     time.Duration `json:"output-file-flush-interval"`
+	SizeLimit         size.Size     `json:"output-file-size-limit"`
+	OutputFileMaxSize size.Size     `json:"output-file-max-size-limit"`
+	QueueLimit        int           `json:"output-file-queue-limit"`
+	Append            bool          `json:"output-file-append"`
+	BufferPath        string        `json:"output-file-buffer"`
 	onClose           func(string)
 }
 
@@ -48,7 +48,7 @@ type FileOutput struct {
 	pathTemplate   string
 	currentName    string
 	file           *os.File
-	queueLength    int64
+	QueueLength    int
 	chunkSize      int
 	writer         io.Writer
 	requestPerFile bool
@@ -71,13 +71,13 @@ func NewFileOutput(pathTemplate string, config *FileOutputConfig) *FileOutput {
 		o.requestPerFile = true
 	}
 
-	if config.flushInterval == 0 {
-		config.flushInterval = 100 * time.Millisecond
+	if config.FlushInterval == 0 {
+		config.FlushInterval = 100 * time.Millisecond
 	}
 
 	go func() {
 		for {
-			time.Sleep(config.flushInterval)
+			time.Sleep(config.FlushInterval)
 			if o.IsClosed() {
 				break
 			}
@@ -152,12 +152,12 @@ func (o *FileOutput) filename() string {
 		path = strings.Replace(path, name, fn(o), -1)
 	}
 
-	if !o.config.append {
+	if !o.config.Append {
 		nextChunk := false
 
 		if o.currentName == "" ||
-			((o.config.queueLimit > 0 && o.queueLength >= o.config.queueLimit) ||
-				(o.config.sizeLimit > 0 && o.chunkSize >= int(o.config.sizeLimit))) {
+			((o.config.QueueLimit > 0 && o.QueueLength >= o.config.QueueLimit) ||
+				(o.config.SizeLimit > 0 && o.chunkSize >= int(o.config.SizeLimit))) {
 			nextChunk = true
 		}
 
@@ -224,7 +224,7 @@ func (o *FileOutput) Write(data []byte) (n int, err error) {
 			log.Fatal(o, "Cannot open file %q. Error: %s", o.currentName, err)
 		}
 
-		o.queueLength = 0
+		o.QueueLength = 0
 	}
 
 	n, _ = o.writer.Write(data)
@@ -233,9 +233,9 @@ func (o *FileOutput) Write(data []byte) (n int, err error) {
 	n += nSeparator
 
 	o.totalFileSize += size.Size(n)
-	o.queueLength++
+	o.QueueLength++
 
-	if Settings.outputFileConfig.outputFileMaxSize > 0 && o.totalFileSize >= Settings.outputFileConfig.outputFileMaxSize {
+	if Settings.OutputFileConfig.OutputFileMaxSize > 0 && o.totalFileSize >= Settings.OutputFileConfig.OutputFileMaxSize {
 		return n, errors.New("File output reached size limit")
 	}
 

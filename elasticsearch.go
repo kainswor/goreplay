@@ -69,7 +69,7 @@ func parseURI(URI string) (err error, index string) {
 		return
 	}
 
-	//	check URL validity by extracting host and undex values.
+	//	check URL validity by extracting host and index values.
 	host := parsedUrl.Host
 	urlPathParts := strings.Split(parsedUrl.Path, "/")
 	index = urlPathParts[len(urlPathParts)-1]
@@ -101,7 +101,7 @@ func (p *ESPlugin) Init(URI string) {
 
 	go p.ErrorHandler()
 
-	Debug(0, "Initialized Elasticsearch Plugin")
+	Debug(1, "Initialized Elasticsearch Plugin")
 	return
 }
 
@@ -113,7 +113,7 @@ func (p *ESPlugin) IndexerShutdown() {
 func (p *ESPlugin) ErrorHandler() {
 	for {
 		errBuf := <-p.indexor.ErrorChannel
-		Debug(1, errBuf.Err)
+		Debug(1, "[ELASTICSEARCH]", errBuf.Err)
 	}
 }
 

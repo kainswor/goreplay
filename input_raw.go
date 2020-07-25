@@ -52,17 +52,17 @@ func (protocol *TCPProtocol) String() string {
 // RAWInputConfig represents configuration that can be applied on raw input
 type RAWInputConfig struct {
 	capture.PcapOptions
+	Expire         time.Duration      `json:"input-raw-expire"`
+	CopyBufferSize size.Size          `json:"copy-buffer-size"`
+	Engine         capture.EngineType `json:"input-raw-engine"`
+	TrackResponse  bool               `json:"input-raw-track-response"`
+	Protocol       TCPProtocol        `json:"input-raw-protocol"`
+	RealIPHeader   string             `json:"input-raw-realip-header"`
+	NoHTTP         bool               `json:"input-raw-no-http"`
+	Stats          bool               `json:"input-raw-stats""`
+	quit           chan bool          // Channel used only to indicate goroutine should shutdown
 	host           string
 	port           uint16
-	expire         time.Duration
-	copyBufferSize size.Size
-	quit           chan bool // Channel used only to indicate goroutine should shutdown
-	engine         capture.EngineType
-	trackResponse  bool
-	protocol       TCPProtocol
-	realIPHeader   string
-	noHTTP         bool // if true the body will not be treated as http
-	stats          bool
 }
 
 // RAWInput used for intercepting traffic for given address
@@ -116,8 +116,8 @@ func (i *RAWInput) Read(data []byte) (n int, err error) {
 	var msgType byte = ResponsePayload
 	if msg.IsIncoming {
 		msgType = RequestPayload
-		if i.realIPHeader != "" {
-			buf = proto.SetHeader(buf, []byte(i.realIPHeader), []byte(msg.SrcAddr))
+		if i.RealIPHeader != "" {
+			buf = proto.SetHeader(buf, []byte(i.RealIPHeader), []byte(msg.SrcAddr))
 		}
 	}
 	header = payloadHeader(msgType, msg.UUID(), msg.Start.UnixNano(), msg.End.UnixNano()-msg.Start.UnixNano())
@@ -130,7 +130,7 @@ func (i *RAWInput) Read(data []byte) (n int, err error) {
 	if dis > 0 {
 		Debug(2, "[INPUT-RAW] discarded", dis, "bytes increase copy buffer size")
 	}
-	if i.stats {
+	if i.Stats {
 		i.Lock()
 		if len(i.messageStats) >= 10000 {
 			i.messageStats = []tcp.Stats{}
@@ -143,7 +143,7 @@ func (i *RAWInput) Read(data []byte) (n int, err error) {
 
 func (i *RAWInput) listen(address string) {
 	var err error
-	i.listener, err = capture.NewListener(i.host, i.port, "", i.engine, i.trackResponse)
+	i.listener, err = capture.NewListener(i.host, i.port, "", i.Engine, i.TrackResponse)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -152,7 +152,7 @@ func (i *RAWInput) listen(address string) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	pool := tcp.NewMessagePool(i.copyBufferSize, i.expire, Debug, i.handler)
+	pool := tcp.NewMessagePool(i.CopyBufferSize, i.Expire, Debug, i.handler)
 	var ctx context.Context
 	ctx, i.cancelListener = context.WithCancel(context.Background())
 	errCh := i.listener.ListenBackground(ctx, pool.Handler)
@@ -173,7 +173,7 @@ func (i *RAWInput) String() string {
 }
 
 // Stats returns the stats so far
-func (i *RAWInput) Stats() []tcp.Stats {
+func (i *RAWInput) GetStats() []tcp.Stats {
 	i.Lock()
 	defer func() {
 		i.messageStats = []tcp.Stats{}

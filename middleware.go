@@ -78,7 +78,7 @@ func (m *Middleware) copy(to io.Writer, from io.Reader) {
 
 		payload := buf[0:nr]
 
-		if Settings.prettifyHTTP {
+		if Settings.PrettifyHTTP {
 			payload = prettifyHTTP(payload)
 			nr = len(payload)
 
@@ -87,7 +87,7 @@ func (m *Middleware) copy(to io.Writer, from io.Reader) {
 			}
 		}
 
-		if Settings.prettifyHTTP {
+		if Settings.PrettifyHTTP {
 			payload = prettifyHTTP(payload)
 			nr = len(payload)
 		}

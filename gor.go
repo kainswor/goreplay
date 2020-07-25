@@ -67,9 +67,9 @@ func main() {
 		profileCPU(*cpuprofile)
 	}
 
-	if Settings.pprof != "" {
+	if Settings.Pprof != "" {
 		go func() {
-			log.Println(http.ListenAndServe(Settings.pprof, nil))
+			log.Println(http.ListenAndServe(Settings.Pprof, nil))
 		}()
 	}
 
@@ -89,16 +89,16 @@ func main() {
 		os.Exit(exit)
 	}()
 
-	if Settings.exitAfter > 0 {
-		fmt.Printf("Running gor for a duration of %s\n", Settings.exitAfter)
+	if Settings.ExitAfter > 0 {
+		log.Printf("Running gor for a duration of %s\n", Settings.ExitAfter)
 
-		time.AfterFunc(Settings.exitAfter, func() {
-			fmt.Printf("gor run timeout %s\n", Settings.exitAfter)
+		time.AfterFunc(Settings.ExitAfter, func() {
+			fmt.Printf("gor run timeout %s\n", Settings.ExitAfter)
 			close(closeCh)
 		})
 	}
 
-	emitter.Start(plugins, Settings.middleware)
+	emitter.Start(plugins, Settings.Middleware)
 }
 
 func profileCPU(cpuprofile string) {

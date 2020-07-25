@@ -26,13 +26,13 @@ type Handler func(gopacket.Packet)
 // PcapOptions options that can be set on a pcap capture handle,
 // these options take effect on inactive pcap handles
 type PcapOptions struct {
-	Promiscuous   bool
-	Monitor       bool
-	Snaplen       bool
-	BufferTimeout time.Duration
-	TimestampType string
-	BufferSize    size.Size
-	BPFFilter     string // custom bpf filter
+	Promiscuous   bool          `json:"input-raw-promisc"`
+	Monitor       bool          `json:"input-raw-monitor"`
+	Snaplen       bool          `json:"input-raw-override-snaplen"`
+	BufferTimeout time.Duration `json:"input-raw-buffer-timeout"`
+	TimestampType string        `json:"input-raw-timestamp-type"`
+	BufferSize    size.Size     `json:"input-raw-buffer-size"`
+	BPFFilter     string        `json:"input-raw-bpf-filter"`
 }
 
 // NetInterface represents network interface

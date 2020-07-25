@@ -116,7 +116,7 @@ func (e *emitter) Close() {
 func CopyMulty(stop chan int, src io.Reader, writers ...io.Writer) error {
 	buf := make([]byte, Settings.copyBufferSize)
 	wIndex := 0
-	modifier := NewHTTPModifier(&Settings.modifierConfig)
+	modifier := NewHTTPModifier(&Settings.ModifierConfig)
 	filteredRequests := make(map[string]time.Time)
 	filteredRequestsLastCleanTime := time.Now()
 
@@ -176,15 +176,15 @@ func CopyMulty(stop chan int, src io.Reader, writers ...io.Writer) error {
 				}
 			}
 
-			if Settings.prettifyHTTP {
+			if Settings.PrettifyHTTP {
 				payload = prettifyHTTP(payload)
 				if len(payload) == 0 {
 					continue
 				}
 			}
 
-			if Settings.splitOutput {
-				if Settings.recognizeTCPSessions {
+			if Settings.SplitOutput {
+				if Settings.RecognizeTCPSessions {
 					if !PRO {
 						log.Fatal("Detailed TCP sessions work only with PRO license")
 					}

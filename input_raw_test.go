@@ -45,11 +45,11 @@ func TestRAWInputIPv4(t *testing.T) {
 
 	var respCounter, reqCounter int64
 	conf := RAWInputConfig{
-		engine:        capture.EnginePcap,
-		expire:        0,
-		protocol:      ProtocolHTTP,
-		trackResponse: true,
-		realIPHeader:  "X-Real-IP",
+		Engine:        capture.EnginePcap,
+		Expire:        0,
+		Protocol:      ProtocolHTTP,
+		TrackResponse: true,
+		RealIPHeader:  "X-Real-IP",
 	}
 	input := NewRAWInput("127.0.0.1:"+port, conf)
 
@@ -75,7 +75,7 @@ func TestRAWInputIPv4(t *testing.T) {
 	client := NewHTTPClient("http://127.0.0.1:"+port, &HTTPClientConfig{})
 
 	emitter := NewEmitter(quit)
-	go emitter.Start(plugins, Settings.middleware)
+	go emitter.Start(plugins, Settings.Middleware)
 	for i := 0; i < 10; i++ {
 		// request + response
 		wg.Add(2)
@@ -115,10 +115,10 @@ func TestRAWInputNoKeepAlive(t *testing.T) {
 	_, port, _ := net.SplitHostPort(listener.Addr().String())
 	originAddr := "127.0.0.1:" + port
 	conf := RAWInputConfig{
-		engine:        capture.EnginePcap,
-		expire:        testRawExpire,
-		protocol:      ProtocolHTTP,
-		trackResponse: true,
+		Engine:        capture.EnginePcap,
+		Expire:        testRawExpire,
+		Protocol:      ProtocolHTTP,
+		TrackResponse: true,
 	}
 	input := NewRAWInput(originAddr, conf)
 	var respCounter, reqCounter int64
@@ -140,7 +140,7 @@ func TestRAWInputNoKeepAlive(t *testing.T) {
 	client := NewHTTPClient("http://"+originAddr, &HTTPClientConfig{})
 
 	emitter := NewEmitter(quit)
-	go emitter.Start(plugins, Settings.middleware)
+	go emitter.Start(plugins, Settings.Middleware)
 
 	for i := 0; i < 10; i++ {
 		// request + response
@@ -162,7 +162,7 @@ func TestRAWInputIPv6(t *testing.T) {
 
 	listener, err := net.Listen("tcp", "[::1]:0")
 	if err != nil {
-		t.Fatal(err)
+		return
 	}
 	origin := &http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -181,9 +181,9 @@ func TestRAWInputIPv6(t *testing.T) {
 
 	var respCounter, reqCounter int64
 	conf := RAWInputConfig{
-		engine:        capture.EnginePcap,
-		protocol:      ProtocolHTTP,
-		trackResponse: true,
+		Engine:        capture.EnginePcap,
+		Protocol:      ProtocolHTTP,
+		TrackResponse: true,
 	}
 	input := NewRAWInput(originAddr, conf)
 
@@ -204,7 +204,7 @@ func TestRAWInputIPv6(t *testing.T) {
 	client := NewHTTPClient("http://"+originAddr, &HTTPClientConfig{})
 
 	emitter := NewEmitter(quit)
-	go emitter.Start(plugins, Settings.middleware)
+	go emitter.Start(plugins, Settings.Middleware)
 	for i := 0; i < 10; i++ {
 		// request + response
 		wg.Add(2)
@@ -236,10 +236,10 @@ func TestRAWInputIPv6(t *testing.T) {
 
 // 	originAddr := strings.Replace(origin.Listener.Addr().String(), "[::]", "127.0.0.1", -1)
 // 	conf := RAWInputConfig{
-// 		engine:        capture.EnginePcap,
-// 		protocol:      ProtocolHTTP,
-// 		trackResponse: true,
-// 		expire:        time.Second,
+// 		Engine:        capture.EnginePcap,
+// 		Protocol:      ProtocolHTTP,
+// 		TrackResponse: true,
+// 		Expire:        time.Second,
 // 	}
 // 	input := NewRAWInput(originAddr, conf)
 // 	defer input.Close()
@@ -310,10 +310,10 @@ func TestInputRAWChunkedEncoding(t *testing.T) {
 
 	originAddr := strings.Replace(origin.Listener.Addr().String(), "[::]", "127.0.0.1", -1)
 	conf := RAWInputConfig{
-		engine:        capture.EnginePcap,
-		expire:        time.Second,
-		protocol:      ProtocolHTTP,
-		trackResponse: true,
+		Engine:        capture.EnginePcap,
+		Expire:        time.Second,
+		Protocol:      ProtocolHTTP,
+		TrackResponse: true,
 	}
 	input := NewRAWInput(originAddr, conf)
 
@@ -339,7 +339,7 @@ func TestInputRAWChunkedEncoding(t *testing.T) {
 	plugins.All = append(plugins.All, input, httpOutput)
 
 	emitter := NewEmitter(quit)
-	go emitter.Start(plugins, Settings.middleware)
+	go emitter.Start(plugins, Settings.Middleware)
 	wg.Add(2)
 
 	curl := exec.Command("curl", "http://"+originAddr, "--header", "Transfer-Encoding: chunked", "--header", "Expect:", "--data-binary", "@README.md")
@@ -353,7 +353,7 @@ func TestInputRAWChunkedEncoding(t *testing.T) {
 }
 
 func BenchmarkRAWInputWithReplay(b *testing.B) {
-	Settings.verbose = -1
+	Settings.Verbose = -1
 	b.StopTimer()
 	var respCounter, reqCounter, replayCounter, capturedBody uint64
 	wg := &sync.WaitGroup{}
@@ -393,10 +393,10 @@ func BenchmarkRAWInputWithReplay(b *testing.B) {
 	replayAddr := strings.Replace(listener0.Addr().String(), "[::]", "127.0.0.1", -1)
 
 	conf := RAWInputConfig{
-		engine:        capture.EnginePcap,
-		expire:        testRawExpire,
-		protocol:      ProtocolHTTP,
-		trackResponse: true,
+		Engine:        capture.EnginePcap,
+		Expire:        testRawExpire,
+		Protocol:      ProtocolHTTP,
+		TrackResponse: true,
 	}
 	input := NewRAWInput(originAddr, conf)
 
@@ -416,7 +416,7 @@ func BenchmarkRAWInputWithReplay(b *testing.B) {
 	}
 
 	emitter := NewEmitter(quit)
-	go emitter.Start(plugins, Settings.middleware)
+	go emitter.Start(plugins, Settings.Middleware)
 	b.StartTimer()
 	now := time.Now()
 	for i := 0; i < b.N; i++ {
