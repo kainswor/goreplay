@@ -25,8 +25,9 @@ func NewEmitter(quit chan int) *emitter {
 
 // Start initialize loop for sending data from inputs to outputs
 func (e *emitter) Start(plugins *InOutPlugins, middlewareCmd string) {
-	if Settings.copyBufferSize < 1 {
-		Settings.copyBufferSize = 5 << 20
+	defer e.Wait()
+	if Settings.CopyBufferSize < 1 {
+		Settings.CopyBufferSize = 5 << 20
 	}
 	e.plugins = plugins
 
@@ -109,12 +110,11 @@ func (e *emitter) Close() {
 		}
 	}
 	e.plugins = nil // avoid further accidental usage
-	e.Wait()
 }
 
 // CopyMulty copies from 1 reader to multiple writers
 func CopyMulty(stop chan int, src io.Reader, writers ...io.Writer) error {
-	buf := make([]byte, Settings.copyBufferSize)
+	buf := make([]byte, Settings.CopyBufferSize)
 	wIndex := 0
 	modifier := NewHTTPModifier(&Settings.ModifierConfig)
 	filteredRequests := make(map[string]time.Time)

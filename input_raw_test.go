@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"io"
 	"io/ioutil"
-	"log"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -26,7 +25,7 @@ func TestRAWInputIPv4(t *testing.T) {
 	wg := new(sync.WaitGroup)
 	quit := make(chan int)
 
-	listener, err := net.Listen("tcp", ":0")
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Error(err)
 		return
@@ -41,8 +40,6 @@ func TestRAWInputIPv4(t *testing.T) {
 	go origin.Serve(listener)
 	defer listener.Close()
 
-	_, port, _ := net.SplitHostPort(listener.Addr().String())
-
 	var respCounter, reqCounter int64
 	conf := RAWInputConfig{
 		Engine:        capture.EnginePcap,
@@ -51,7 +48,7 @@ func TestRAWInputIPv4(t *testing.T) {
 		TrackResponse: true,
 		RealIPHeader:  "X-Real-IP",
 	}
-	input := NewRAWInput("127.0.0.1:"+port, conf)
+	input := NewRAWInput(listener.Addr().String(), conf)
 
 	output := NewTestOutput(func(data []byte) {
 		if data[0] == '1' {
@@ -72,14 +69,14 @@ func TestRAWInputIPv4(t *testing.T) {
 	}
 	plugins.All = append(plugins.All, input, output)
 
-	client := NewHTTPClient("http://127.0.0.1:"+port, &HTTPClientConfig{})
+	client := NewHTTPClient(listener.Addr().String(), &HTTPClientConfig{})
 
 	emitter := NewEmitter(quit)
+	defer emitter.Close()
 	go emitter.Start(plugins, Settings.Middleware)
 	for i := 0; i < 10; i++ {
-		// request + response
 		wg.Add(2)
-		_, err = client.Get("http://127.0.0.1:" + port)
+		_, err = client.Get("/")
 		if err != nil {
 			t.Error(err)
 			return
@@ -90,14 +87,13 @@ func TestRAWInputIPv4(t *testing.T) {
 	if reqCounter != respCounter && reqCounter != want {
 		t.Errorf("want %d requests and %d responses, got %d requests and %d responses", want, want, reqCounter, respCounter)
 	}
-	emitter.Close()
 }
 
 func TestRAWInputNoKeepAlive(t *testing.T) {
 	wg := new(sync.WaitGroup)
 	quit := make(chan int)
 
-	listener, err := net.Listen("tcp", ":0")
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,15 +108,13 @@ func TestRAWInputNoKeepAlive(t *testing.T) {
 	go origin.Serve(listener)
 	defer listener.Close()
 
-	_, port, _ := net.SplitHostPort(listener.Addr().String())
-	originAddr := "127.0.0.1:" + port
 	conf := RAWInputConfig{
 		Engine:        capture.EnginePcap,
 		Expire:        testRawExpire,
 		Protocol:      ProtocolHTTP,
 		TrackResponse: true,
 	}
-	input := NewRAWInput(originAddr, conf)
+	input := NewRAWInput(listener.Addr().String(), conf)
 	var respCounter, reqCounter int64
 	output := NewTestOutput(func(data []byte) {
 		if data[0] == '1' {
@@ -137,7 +131,7 @@ func TestRAWInputNoKeepAlive(t *testing.T) {
 	}
 	plugins.All = append(plugins.All, input, output)
 
-	client := NewHTTPClient("http://"+originAddr, &HTTPClientConfig{})
+	client := NewHTTPClient(listener.Addr().String(), &HTTPClientConfig{})
 
 	emitter := NewEmitter(quit)
 	go emitter.Start(plugins, Settings.Middleware)
@@ -145,7 +139,11 @@ func TestRAWInputNoKeepAlive(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		// request + response
 		wg.Add(2)
-		client.Get("/")
+		_, err = client.Get("/")
+		if err != nil {
+			t.Error(err)
+			return
+		}
 	}
 
 	wg.Wait()
@@ -171,9 +169,6 @@ func TestRAWInputIPv6(t *testing.T) {
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 	}
-	// if you set this to true, ON IPv6 clients keep re-using the same connection, which
-	// means any x number of requests may be regarded as one message!
-	origin.SetKeepAlivesEnabled(false)
 	go origin.Serve(listener)
 	defer listener.Close()
 	_, port, _ := net.SplitHostPort(listener.Addr().String())
@@ -201,14 +196,18 @@ func TestRAWInputIPv6(t *testing.T) {
 		Outputs: []io.Writer{output},
 	}
 
-	client := NewHTTPClient("http://"+originAddr, &HTTPClientConfig{})
+	client := NewHTTPClient(originAddr, &HTTPClientConfig{})
 
 	emitter := NewEmitter(quit)
 	go emitter.Start(plugins, Settings.Middleware)
 	for i := 0; i < 10; i++ {
 		// request + response
 		wg.Add(2)
-		client.Get("/")
+		_, err = client.Get("/")
+		if err != nil {
+			t.Error(err)
+			return
+		}
 	}
 
 	wg.Wait()
@@ -218,81 +217,6 @@ func TestRAWInputIPv6(t *testing.T) {
 	}
 	emitter.Close()
 }
-
-// func TestInputRAW100Expect(t *testing.T) {
-//
-// 	wg := new(sync.WaitGroup)
-// 	quit := make(chan int)
-
-// 	fileContent, _ := ioutil.ReadFile("COMM-LICENSE")
-
-// 	// Origing and Replay server initialization
-// 	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-// 		defer r.Body.Close()
-// 		ioutil.ReadAll(r.Body)
-// 		wg.Done()
-// 	}))
-// 	defer origin.Close()
-
-// 	originAddr := strings.Replace(origin.Listener.Addr().String(), "[::]", "127.0.0.1", -1)
-// 	conf := RAWInputConfig{
-// 		Engine:        capture.EnginePcap,
-// 		Protocol:      ProtocolHTTP,
-// 		TrackResponse: true,
-// 		Expire:        time.Second,
-// 	}
-// 	input := NewRAWInput(originAddr, conf)
-// 	defer input.Close()
-
-// 	// We will use it to get content of raw HTTP request
-// 	testOutput := NewTestOutput(func(data []byte) {
-// 		if data[0] == RequestPayload {
-// 			if strings.Contains(string(data), "Expect: 100-continue") {
-// 				t.Error("request should not contain 100-continue header")
-// 			}
-// 		}
-// 		if data[0] == ResponsePayload {
-// 			if strings.Contains(string(data), "Expect: 100-continue") {
-// 				t.Error("Should not contain 100-continue header")
-// 			}
-// 		}
-// 		wg.Done()
-// 	})
-
-// 	replay := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-// 		defer r.Body.Close()
-// 		body, _ := ioutil.ReadAll(r.Body)
-
-// 		if !bytes.Equal(body, fileContent) {
-// 			buf, _ := httputil.DumpRequest(r, true)
-// 			t.Error("Wrong POST body:", string(buf))
-// 		}
-
-// 		wg.Done()
-// 	}))
-// 	defer replay.Close()
-
-// 	httpOutput := NewHTTPOutput(replay.URL, &HTTPOutputConfig{})
-
-// 	plugins := &InOutPlugins{
-// 		Outputs: []io.Writer{testOutput, httpOutput},
-// 	}
-// 	plugins.All = append(plugins.All, input, testOutput, httpOutput)
-
-// 	emitter := NewEmitter(quit)
-// 	go emitter.Start(plugins, Settings.middleware)
-
-// 	// Origin + Response/Request Test Output + Request Http Output
-// 	wg.Add(4)
-// 	curl := exec.Command("curl", "http://"+originAddr, "--data-binary", "@COMM-LICENSE")
-// 	err := curl.Run()
-// 	if err != nil {
-// 		log.Fatal(err)
-// 	}
-
-// 	wg.Wait()
-// 	emitter.Close()
-// }
 
 func TestInputRAWChunkedEncoding(t *testing.T) {
 	wg := new(sync.WaitGroup)
@@ -339,33 +263,32 @@ func TestInputRAWChunkedEncoding(t *testing.T) {
 	plugins.All = append(plugins.All, input, httpOutput)
 
 	emitter := NewEmitter(quit)
+	defer emitter.Close()
 	go emitter.Start(plugins, Settings.Middleware)
 	wg.Add(2)
 
 	curl := exec.Command("curl", "http://"+originAddr, "--header", "Transfer-Encoding: chunked", "--header", "Expect:", "--data-binary", "@README.md")
 	err := curl.Run()
 	if err != nil {
-		log.Fatal(err)
+		t.Error(err)
+		return
 	}
 
 	wg.Wait()
-	emitter.Close()
 }
 
 func BenchmarkRAWInputWithReplay(b *testing.B) {
-	Settings.Verbose = -1
-	b.StopTimer()
 	var respCounter, reqCounter, replayCounter, capturedBody uint64
 	wg := &sync.WaitGroup{}
 	wg.Add(b.N * 3) // reqCounter + replayCounter + respCounter
 
 	quit := make(chan int)
-	listener, err := net.Listen("tcp", ":0")
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		b.Error(err)
 		return
 	}
-	listener0, err := net.Listen("tcp", ":0")
+	listener0, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		b.Error(err)
 		return
@@ -378,19 +301,24 @@ func BenchmarkRAWInputWithReplay(b *testing.B) {
 	}
 	go origin.Serve(listener)
 	defer origin.Close()
-	originAddr := strings.Replace(listener.Addr().String(), "[::]", "127.0.0.1", -1)
+	originAddr := listener.Addr().String()
 
 	replay := http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			defer wg.Done()
+			defer r.Body.Close()
+			w.Write([]byte("ab"))
 			atomic.AddUint64(&replayCounter, 1)
-			data, _ := ioutil.ReadAll(r.Body)
-			capturedBody += uint64(len(data))
-			wg.Done()
+			data, err := ioutil.ReadAll(r.Body)
+			if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+				b.Log(err)
+			}
+			atomic.AddUint64(&capturedBody, uint64(len(data)))
 		}),
 	}
 	go replay.Serve(listener0)
 	defer replay.Close()
-	replayAddr := strings.Replace(listener0.Addr().String(), "[::]", "127.0.0.1", -1)
+	replayAddr := listener0.Addr().String()
 
 	conf := RAWInputConfig{
 		Engine:        capture.EnginePcap,
@@ -406,6 +334,7 @@ func BenchmarkRAWInputWithReplay(b *testing.B) {
 		} else {
 			atomic.AddUint64(&respCounter, 1)
 		}
+		atomic.AddUint64(&capturedBody, uint64(len(data)))
 		wg.Done()
 	})
 	httpOutput := NewHTTPOutput(replayAddr, &HTTPOutputConfig{Debug: false})
@@ -417,19 +346,23 @@ func BenchmarkRAWInputWithReplay(b *testing.B) {
 
 	emitter := NewEmitter(quit)
 	go emitter.Start(plugins, Settings.Middleware)
-	b.StartTimer()
 	now := time.Now()
+	var buf [1 << 20]byte
+	buf[1<<20-1] = 'a'
+	client := NewHTTPClient(originAddr, &HTTPClientConfig{ResponseBufferSize: 2 << 20, CompatibilityMode: true})
 	for i := 0; i < b.N; i++ {
 		if i&1 == 0 {
-			go http.Get("http://" + originAddr)
-			continue
+			_, err = client.Get("/")
+		} else {
+			_, err = client.Post("/", buf[:])
 		}
-		var buf [5 << 20]byte
-		buf[5<<20-1] = 'a'
-		go http.Post("http://"+originAddr, "text/html", bytes.NewBuffer(buf[:]))
+		if err != nil {
+			b.Log(err)
+			wg.Add(-3)
+		}
 	}
 
 	wg.Wait()
-	b.Logf("Captured %d Requests, %d Responses, %d Replayed, %d Bytes in %s\n", reqCounter, respCounter, replayCounter, capturedBody, time.Since(now))
+	b.Logf("%d/%d Requests, %d/%d Responses, %d/%d Replayed, %d Bytes in %s\n", reqCounter, b.N, respCounter, b.N, replayCounter, b.N, capturedBody, time.Since(now))
 	emitter.Close()
 }

@@ -23,16 +23,6 @@ var LoopBack = func() net.Interface {
 	return ifis[0]
 }()
 
-func TestListenerInvalidTransport(t *testing.T) {
-	l, _ := NewListener("", 10, "udp", 0, false)
-	if l.Transport != "tcp" {
-		t.Errorf("expected transport to be tcp, got %s", l.Transport)
-	}
-	if l.Engine != EnginePcap {
-		t.Errorf("expected engine to be libcap, got %s", l.Engine.String())
-	}
-}
-
 func TestSetInterfaces(t *testing.T) {
 	l := &Listener{}
 	l.host = "127.0.0.1"
@@ -146,7 +136,9 @@ func testPcapDumpEngine(f string, t *testing.T) {
 		return
 	}
 	pckts := 0
-	err = l.Listen(context.Background(), func(packet gopacket.Packet) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	err = l.Listen(ctx, func(packet gopacket.Packet) {
 		if packet.Metadata().CaptureLength != 49 {
 			t.Errorf("expected packet length to be %d, got %d", 49, packet.Metadata().CaptureLength)
 		}
@@ -164,36 +156,40 @@ func testPcapDumpEngine(f string, t *testing.T) {
 func TestPcapHandler(t *testing.T) {
 	l, err := NewListener(LoopBack.Name, 8000, "", EnginePcap, true)
 	if err != nil {
-		t.Errorf("expected error to be nil, got %d", err)
+		t.Errorf("expected error to be nil, got %v", err)
 		return
 	}
+	err = l.Activate()
 	if err != nil {
 		t.Errorf("expected error to be nil, got %v", err)
 		return
 	}
-	if err != nil {
-		t.Errorf("expected error to be nil, got %v", err)
-		return
-	}
+	quit := make(chan bool, 1)
 	pckts := 0
-	errCh := l.ListenBackground(context.Background(), func(packet gopacket.Packet) {
-		if packet.Metadata().CaptureLength != 49 {
-			t.Errorf("expected packet length to be %d, got %d", 49, packet.Metadata().CaptureLength)
-		}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := l.ListenBackground(ctx, func(packet gopacket.Packet) {
 		pckts++
+		if pckts == 10 {
+			quit <- true
+		}
 	})
-	packets := randomPackets(1, 5, 5)
-	for i := 0; i < 5; i++ {
-		l.packets <- packets[i]
-	}
-	close(l.packets)
-	err = <-errCh
-	if pckts != 5 {
-		t.Errorf("expected %d packets, got %d packets", 5, pckts)
+	select {
+	case err = <-errCh:
+		t.Error(err)
+	case <-l.Reading:
 	}
 	if err != nil {
-		t.Errorf("expected error to be nil, got %d", err)
+		t.Errorf("expected error to be nil, got %v", err)
 		return
+	}
+	for i := 0; i < 5; i++ {
+		_, _ = net.Dial("tcp", "127.0.0.1:8000")
+	}
+	select {
+	case <-time.After(time.Second * 2):
+		t.Error("failed to parse packets in time")
+	case <-quit:
 	}
 }
 
@@ -215,7 +211,6 @@ func BenchmarkPcapDump(b *testing.B) {
 }
 
 func BenchmarkPcapFile(b *testing.B) {
-	b.StopTimer()
 	f, err := ioutil.TempFile("", "pcap_file")
 	if err != nil {
 		b.Error(err)
@@ -236,10 +231,11 @@ func BenchmarkPcapFile(b *testing.B) {
 		return
 	}
 	l.Activate()
-	b.StartTimer()
 	now := time.Now()
 	pckts := 0
-	if err = l.Listen(context.Background(), func(packet gopacket.Packet) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err = l.Listen(ctx, func(packet gopacket.Packet) {
 		if packet.Metadata().CaptureLength != 49 {
 			b.Errorf("expected packet length to be %d, got %d", 49, packet.Metadata().CaptureLength)
 		}
@@ -251,39 +247,40 @@ func BenchmarkPcapFile(b *testing.B) {
 }
 
 func BenchmarkPcap(b *testing.B) {
+	now := time.Now()
+	var err error
+
 	l, err := NewListener(LoopBack.Name, 8000, "", EnginePcap, true)
 	if err != nil {
-		b.Errorf("expected error to be nil, got %d", err)
+		b.Errorf("expected error to be nil, got %v", err)
 		return
 	}
+	err = l.Activate()
 	if err != nil {
 		b.Errorf("expected error to be nil, got %v", err)
 		return
 	}
-	if err != nil {
-		b.Errorf("expected error to be nil, got %v", err)
-		return
-	}
-	now := time.Now()
+	quit := make(chan bool, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	pckts := 0
-	errCh := l.ListenBackground(context.Background(), func(packet gopacket.Packet) {
-		if packet.Metadata().CaptureLength != 49 {
-			b.Errorf("expected packet length to be %d, got %d", 49, packet.Metadata().CaptureLength)
-		}
+	errCh := l.ListenBackground(ctx, func(_ gopacket.Packet) {
 		pckts++
+		if pckts == b.N*2 {
+			quit <- true
+		}
 	})
-	packets := randomPackets(1, b.N, 5)
+	select {
+	case err = <-errCh:
+		b.Error(err)
+	case <-l.Reading:
+	}
 	for i := 0; i < b.N; i++ {
-		l.packets <- packets[i]
+		_, _ = net.Dial("tcp", "127.0.0.1:8000")
 	}
-	close(l.packets)
-	err = <-errCh
-	if pckts != b.N {
-		b.Errorf("expected %d packets, got %d packets", 5, pckts)
+	select {
+	case <-time.After(time.Second):
+	case <-quit:
 	}
-	if err != nil {
-		b.Errorf("expected error to be nil, got %d", err)
-		return
-	}
-	b.Logf("%d packets in %s", b.N, time.Since(now))
+	b.Logf("%d/%d packets in %s", pckts, b.N*2, time.Since(now))
 }

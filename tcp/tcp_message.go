@@ -1,9 +1,7 @@
 package tcp
 
 import (
-	"bytes"
 	"crypto/sha1"
-	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"sort"
@@ -16,15 +14,16 @@ import (
 
 // Stats every message carry its own stats object
 type Stats struct {
-	LostData    int
-	Length      int       // length of the data
-	Start       time.Time // first packet's timestamp
-	End         time.Time // last packet's timestamp
-	IPversion   uint8
-	WindowScale uint16
-	MSS         uint16 // maximum segment size
-	SrcAddr     string
-	DstAddr     string
+	LostData   int
+	Length     int       // length of the data
+	Start      time.Time // first packet's timestamp
+	End        time.Time // last packet's timestamp
+	IPversion  byte
+	SrcAddr    string
+	DstAddr    string
+	IsIncoming bool
+	TimedOut   bool // timeout before getting the whole message
+	Truncated  bool // last packet truncated due to max message size
 }
 
 // Message is the representation of a tcp message
@@ -32,16 +31,14 @@ type Message struct {
 	sync.Mutex
 	Stats
 
-	IsIncoming bool
-
 	packets []*Packet
 	done    chan bool
+	data    []byte
 }
 
 // NewMessage ...
-func NewMessage(isIncoming bool, srcAddr, dstAddr string, ipVersion uint8) (m *Message) {
+func NewMessage(srcAddr, dstAddr string, ipVersion uint8) (m *Message) {
 	m = new(Message)
-	m.IsIncoming = isIncoming
 	m.DstAddr = dstAddr
 	m.SrcAddr = srcAddr
 	m.IPversion = ipVersion
@@ -49,30 +46,23 @@ func NewMessage(isIncoming bool, srcAddr, dstAddr string, ipVersion uint8) (m *M
 	return
 }
 
-// UUID probably the unique id of a message(presumably both request and response)
+// UUID the unique id of a TCP session it is not granted to be unique overtime
 func (m *Message) UUID() []byte {
 	m.Lock()
 	defer m.Unlock()
-	if len(m.packets) == 0 {
-		return nil
-	}
-	var syn uint32 // the initial sequence number of a request
 	var src, dst string
 	if m.IsIncoming {
-		syn = m.packets[0].Seq
 		src = m.SrcAddr
 		dst = m.DstAddr
 	} else {
-		syn = m.packets[0].Ack - 1
 		src = m.DstAddr
 		dst = m.SrcAddr
 	}
 
-	length := 4 + len(src) + len(dst)
+	length := len(src) + len(dst)
 	uuid := make([]byte, length)
-	binary.BigEndian.PutUint32(uuid, syn)
-	copy(uuid[4:], src)
-	copy(uuid[4:][len(src):], dst)
+	copy(uuid, src)
+	copy(uuid[len(src):], dst)
 	sha := sha1.Sum(uuid)
 	uuid = make([]byte, 40)
 	hex.Encode(uuid, sha[:])
@@ -84,35 +74,18 @@ func (m *Message) add(pckt *Packet) {
 	m.Length += len(pckt.Payload)
 	m.LostData += int(pckt.Lost)
 	m.packets = append(m.packets, pckt)
-	if m.Start.Nanosecond() == 0 {
-		m.Start = pckt.Timestamp
-	}
+	m.data = append(m.data, pckt.Payload...)
 	m.End = pckt.Timestamp
-	if pckt.FIN {
-		m.done <- true
-	}
 }
 
 // Packets returns packets of this message
 func (m *Message) Packets() []*Packet {
-	m.Lock()
-	defer m.Unlock()
 	return m.packets
-}
-
-// Bytes returns data inside each packets
-func (m *Message) Bytes() (data [][]byte) {
-	for _, pckt := range m.Packets() {
-		if len(pckt.Payload) > 0 {
-			data = append(data, pckt.Payload)
-		}
-	}
-	return
 }
 
 // Data returns data in this message
 func (m *Message) Data() []byte {
-	return bytes.Join(m.Bytes(), []byte{})
+	return m.data
 }
 
 // Sort a helper to sort packets
@@ -127,9 +100,17 @@ type Handler func(*Message)
 // the higher the number, the lower the priority. it can be 4 <= level <= 6.
 type Debugger func(int, ...interface{})
 
+// HintEnd hints the pool to stop the session, see MessagePool.End
+// when set, it will be executed before checking FIN or RST flag
+type HintEnd func(*Message) bool
+
+// HintStart hints the pool to start the reassembling the message, see MessagePool.Start
+// when set, it will be used instead of checking SYN flag
+type HintStart func(*Packet) (IsIncoming, IsOutgoing bool)
+
 // MessagePool holds data of all tcp messages in progress(still receiving/sending packets).
-// Incoming message is identified by the its source port and address e.g: 127.0.0.1:45785.
-// The outgoing message is identified by  server.addr and dst.addr e.g: localhost:80=internet:45785.
+// Incoming message is identified by its source port and address e.g: 127.0.0.1:45785.
+// Outgoing message is identified by  server.addr and dst.addr e.g: localhost:80=internet:45785.
 type MessagePool struct {
 	sync.Mutex
 	debug         Debugger
@@ -137,6 +118,8 @@ type MessagePool struct {
 	pool          map[string]*Message
 	handler       Handler
 	messageExpire time.Duration // the maximum time to wait for the final packet, minimum is 100ms
+	End           HintEnd
+	Start         HintStart
 }
 
 // NewMessagePool returns a new instance of message pool
@@ -158,79 +141,81 @@ func NewMessagePool(maxSize size.Size, messageExpire time.Duration, debugger Deb
 
 // Handler returns packet handler
 func (pool *MessagePool) Handler(packet gopacket.Packet) {
+	var in, out bool
 	pckt, err := ParsePacket(packet)
-	if err != nil && len(pckt.Payload) == 0 {
-		go pool.say(4, fmt.Sprintf("error decoding packet(%dByte):%s\n", packet.Metadata().CaptureLength, err))
+	if err != nil {
+		go pool.say(4, fmt.Sprintf("error decoding packet(%dBytes):%s\n", packet.Metadata().CaptureLength, err))
 		return
 	}
-	if pckt.RST {
-		go pool.say(5, fmt.Sprintf("RST flag sent to %s from %s\n", pckt.Src(), pckt.Dst()))
+	srcKey := pckt.Src()
+	dstKey := srcKey + "=" + pckt.Dst()
+	m, ok := pool.get(srcKey, dstKey)
+	switch {
+	case ok:
+		pool.addPacket(m, pckt)
+		return
+	case pool.Start != nil:
+		if in, out = pool.Start(pckt); in || out {
+			break
+		}
+		return
+	case pckt.SYN:
+		in = !pckt.ACK
+	default:
 		return
 	}
-	pool.Lock()
-	srcAddr := pckt.Src()
-	// creating new message
-	if pckt.SYN {
-		isIncoming := pckt.SYN && !pckt.ACK
-		key := srcAddr
-		if !isIncoming {
-			key += ("=" + pckt.Dst())
-		}
-		m := NewMessage(isIncoming, srcAddr, pckt.Dst(), pckt.Version())
-		m.MSS, m.WindowScale = pckt.SYNOptions()
-		pool.pool[key] = m
-		go pool.timer(m, key)
+	m = NewMessage(srcKey, pckt.Dst(), pckt.Version)
+	m.IsIncoming = in
+	key := srcKey
+	if !m.IsIncoming {
+		key = dstKey
 	}
-	m, ok := pool.pool[srcAddr]
-	if !ok {
-		m, ok = pool.pool[srcAddr+"="+pckt.Dst()]
-	}
-	pool.Unlock()
-	if ok {
-		ok = pool.addPacket(m, pckt)
-		if ok {
-			go pool.say(6, fmt.Sprintf("message: %s, packet:\n%s\n", m.SrcAddr, pckt))
-			return
-		}
-	}
-	go pool.say(5, fmt.Sprintf("packet from %s with length(%dB) discarded\n", srcAddr, len(pckt.Payload)))
-
+	pool.add(key, m)
+	m.Start = pckt.Timestamp
+	pool.addPacket(m, pckt)
+	go pool.dispatch(key, m)
 }
 
 func (pool *MessagePool) dispatch(key string, m *Message) {
-	m.Lock()
-	pool.Lock()
-	delete(pool.pool, key)
-	pool.Unlock()
-	m.Sort()
+	defer m.Unlock()
+	select {
+	case <-m.done:
+	case <-time.After(pool.messageExpire):
+		m.Lock()
+		m.TimedOut = true
+	}
 	m.done = nil
-	m.Unlock()
+	pool.del(key)
 	pool.handler(m)
 }
 
-func (pool *MessagePool) addPacket(m *Message, pckt *Packet) bool {
+func (pool *MessagePool) addPacket(m *Message, pckt *Packet) {
+	// lock is released by this goroutine if this message is still in progress
+	// otherwise lock will be released in pool.dispatch
 	m.Lock()
-	defer m.Unlock()
-	// checking if message was not dispatched alread
 	if m.done == nil {
-		return false
+		m.Unlock()
+		return
 	}
-	if m.Length+len(pckt.Payload) >= int(pool.maxSize) {
-		m.done <- true
-		return false
+	big := m.Length + len(pckt.Payload) - int(pool.maxSize)
+	if big > 0 {
+		m.Truncated = true
+		pckt.Payload = pckt.Payload[:int(pool.maxSize)-m.Length]
 	}
 	m.add(pckt)
-	return true
-}
-
-func (pool *MessagePool) timer(m *Message, key string) {
-	t := time.NewTicker(pool.messageExpire)
-	defer t.Stop()
-	select {
-	case <-m.done:
-	case <-t.C:
+	if big >= 0 {
+		m.done <- true
+		return
 	}
-	pool.dispatch(key, m)
+	switch {
+	case pool.End != nil && pool.End(m):
+		m.done <- true
+		return
+	case pckt.FIN || pckt.RST:
+		m.done <- true
+		return
+	}
+	m.Unlock()
 }
 
 // this function should not block other pool operations
@@ -238,4 +223,26 @@ func (pool *MessagePool) say(level int, args ...interface{}) {
 	if pool.debug != nil {
 		pool.debug(level, args...)
 	}
+}
+
+func (pool *MessagePool) add(key string, m *Message) {
+	pool.Lock()
+	defer pool.Unlock()
+	pool.pool[key] = m
+}
+
+func (pool *MessagePool) get(srcKey string, dstKey string) (m *Message, ok bool) {
+	pool.Lock()
+	defer pool.Unlock()
+	m, ok = pool.pool[srcKey]
+	if !ok {
+		m, ok = pool.pool[dstKey]
+	}
+	return
+}
+
+func (pool *MessagePool) del(key string) {
+	pool.Lock()
+	defer pool.Unlock()
+	delete(pool.pool, key)
 }

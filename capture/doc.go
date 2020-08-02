@@ -13,16 +13,16 @@ if err != nil {
 	// handle error
 }
 listener.SetPcapOptions(opts)
-listner.Activate()
+err = listner.Activate()
+if err != nil {
+	// handle it
+}
 
 if err := listener.Listen(context.Background(), handler); err != nil {
 	 // handle error
 }
-
 // or
-
 errCh := listener.ListenBackground(context.Background(), handler) // runs in the backgorund
-
 select {
 case err := <- errCh:
 	// handle error

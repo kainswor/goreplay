@@ -15,11 +15,6 @@ import (
 	"github.com/google/gopacket/pcap"
 )
 
-// TransportLayers current supported transport layers
-var TransportLayers = [...]string{
-	"tcp",
-}
-
 // Handler is a function that is used to handle packets
 type Handler func(gopacket.Packet)
 
@@ -56,8 +51,9 @@ type Listener struct {
 	port          uint16 // src or/and dst port
 	trackResponse bool
 
-	quit    chan bool
-	packets chan gopacket.Packet
+	quit      chan bool
+	packets   chan gopacket.Packet
+	activated bool
 }
 
 // EngineType ...
@@ -104,12 +100,7 @@ func NewListener(host string, port uint16, transport string, engine EngineType, 
 	l.port = port
 	l.Transport = "tcp"
 	if transport != "" {
-		for _, v := range TransportLayers {
-			if v == transport {
-				l.Transport = transport
-				break
-			}
-		}
+		l.Transport = transport
 	}
 	l.Handles = make(map[string]*pcap.Handle)
 	l.trackResponse = trackResponse
@@ -140,12 +131,13 @@ func (l *Listener) SetPcapOptions(opts PcapOptions) {
 // until the context done signal is sent or EOF on handles.
 // this function should be called after activating pcap handles
 func (l *Listener) Listen(ctx context.Context, handler Handler) (err error) {
+	if err != nil {
+		return err
+	}
 	l.read()
 	done := ctx.Done()
 	var p gopacket.Packet
 	var ok bool
-	l.Reading <- true
-	close(l.Reading)
 	for {
 		select {
 		case <-done:
@@ -301,7 +293,7 @@ func (l *Listener) read() {
 		source.NoCopy = true
 		ch := source.Packets()
 		go func(handle *pcap.Handle, key string) {
-			defer l.closeHandle(key)
+			defer l.closeHandles(key)
 			for {
 				select {
 				case <-l.quit:
@@ -315,9 +307,11 @@ func (l *Listener) read() {
 			}
 		}(handle, key)
 	}
+	l.Reading <- true
+	close(l.Reading)
 }
 
-func (l *Listener) closeHandle(key string) {
+func (l *Listener) closeHandles(key string) {
 	l.Lock()
 	defer l.Unlock()
 	if handle, ok := l.Handles[key]; ok {
