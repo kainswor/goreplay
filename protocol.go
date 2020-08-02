@@ -61,21 +61,21 @@ func payloadBody(payload []byte) []byte {
 func payloadMeta(payload []byte) [][]byte {
 	headerSize := bytes.IndexByte(payload, '\n')
 	if headerSize < 0 {
-		headerSize = 0
+		return nil
 	}
 	return bytes.Split(payload[:headerSize], []byte{' '})
 }
 
-func payloadID(payload []byte) []byte {
-	idx := bytes.IndexByte(payload[2:], ' ')
+func payloadID(payload []byte) (id []byte) {
+	meta := payloadMeta(payload)
 
-	if idx == -1 {
-		return []byte{}
+	if len(meta) < 2 {
+		return
 	}
 	// id is encoded in hex, we need to revert to how it was
-	id := make([]byte, 20)
-	hex.Decode(id, payload[2:2+idx])
-	return id
+	id = make([]byte, 20)
+	hex.Decode(id, meta[1])
+	return
 }
 
 func isOriginPayload(payload []byte) bool {

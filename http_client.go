@@ -255,7 +255,7 @@ func (c *HTTPClient) Send(data []byte) (response []byte, err error) {
 	if c.conn == nil || !c.isAlive(&readBytes) {
 		Debug(3, "[HTTPClient] Connecting:", c.baseURL)
 		if err = c.Connect(); err != nil {
-			log.Println("[HTTPClient] Connection error:", err)
+			Debug(1, "[HTTPClient] Connection error:", err)
 			response = errorPayload(HTTP_CONNECTION_ERROR)
 			return
 		}
@@ -294,7 +294,7 @@ func (c *HTTPClient) send(data []byte, readBytes int, timeout time.Time) (respon
 	var payload []byte
 	var n int
 	if _, err = c.conn.Write(data); err != nil {
-		Debug(3, "[HTTPClient] Write error:", err, c.baseURL)
+		Debug(1, "[HTTPClient] Write error:", err, c.baseURL)
 		response = errorPayload(HTTP_TIMEOUT)
 		c.Disconnect()
 		return

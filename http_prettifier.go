@@ -25,16 +25,14 @@ func prettifyHTTP(p []byte) []byte {
 	content := body[headersPos:]
 
 	var tEnc, cEnc []byte
-	proto.ParseHeaders([][]byte{headers}, func(header, value []byte) bool {
-		if proto.HeadersEqual(header, []byte("Transfer-Encoding")) {
+	proto.ParseHeaders([][]byte{headers}, func(header, value []byte) {
+		if bytes.EqualFold(header, []byte("Transfer-Encoding")) {
 			tEnc = value
 		}
 
-		if proto.HeadersEqual(header, []byte("Content-Encoding")) {
+		if bytes.EqualFold(header, []byte("Content-Encoding")) {
 			cEnc = value
 		}
-
-		return true
 	})
 
 	if len(tEnc) == 0 && len(cEnc) == 0 {

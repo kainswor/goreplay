@@ -34,7 +34,7 @@ func NewHTTPModifier(config *HTTPModifierConfig) *HTTPModifier {
 }
 
 func (m *HTTPModifier) Rewrite(payload []byte) (response []byte) {
-	if !proto.IsHTTPPayload(payload) {
+	if !proto.HasRequestTitle(payload) {
 		return payload
 	}
 

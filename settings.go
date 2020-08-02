@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"runtime"
 	"sync"
 	"time"
 )
@@ -50,14 +51,8 @@ type AppSettings struct {
 	OutputFile       MultiOption `json:"output-file"`
 	OutputFileConfig FileOutputConfig
 
-	InputRAW       MultiOption `json:"input_raw"`
-	RAWInputConfig `json:"input_raw_config"`
-
-	copyBufferSize int64
-
-	OutputFileSizeFlag    string `json:"output-file-size-limit"`
-	OutputFileMaxSizeFlag string `json:"output-file-max-size-limit"`
-	CopyBufferSizeFlag    string `json:"copy-buffer-size"`
+	InputRAW MultiOption `json:"input_raw"`
+	RAWInputConfig
 
 	Middleware string `json:"middleware"`
 
@@ -147,7 +142,6 @@ func init() {
 	flag.Var(&Settings.BufferSize, "input-raw-buffer-size", "Controls size of the OS buffer which holds packets until they dispatched. Default value depends by system: in Linux around 2MB. If you see big package drop, increase this value.")
 	flag.BoolVar(&Settings.Promiscuous, "input-raw-promisc", false, "enable promiscuous mode")
 	flag.BoolVar(&Settings.Monitor, "input-raw-monitor", false, "enable RF monitor mode")
-	flag.BoolVar(&Settings.NoHTTP, "input-raw-no-http", false, "indicates if the body should not be treated as an HTTP body")
 	flag.BoolVar(&Settings.Stats, "input-raw-stats", false, "enable stats generator on raw TCP messages")
 
 	flag.StringVar(&Settings.Middleware, "middleware", "", "Used for modifying traffic using external command")
@@ -220,6 +214,27 @@ func init() {
 
 	flag.Var(&Settings.ModifierConfig.ParamHashFilters, "http-param-limiter", "Takes a fraction of requests, consistently taking or rejecting a request based on the FNV32-1A hash of a specific GET param:\n\t gor --input-raw :8080 --output-http staging.com --http-param-limiter user_id:25%")
 
+	// default values, using for tests
+	Settings.OutputFileConfig.SizeLimit = 33554432
+	Settings.OutputFileConfig.OutputFileMaxSize = 1099511627776
+	Settings.CopyBufferSize = 5242880
+
+}
+
+func checkSettings() {
+	if Settings.OutputFileConfig.SizeLimit < 1 {
+		Settings.OutputFileConfig.SizeLimit.Set("32mb")
+	}
+	if Settings.OutputFileConfig.OutputFileMaxSize < 1 {
+		Settings.OutputFileConfig.OutputFileMaxSize.Set("1tb")
+	}
+	if Settings.CopyBufferSize < 1 {
+		Settings.CopyBufferSize.Set("5mb")
+	}
+	// libpcap has bug in mac os x. More info: https://github.com/buger/goreplay/issues/730
+	if Settings.Expire == time.Second*2 && runtime.GOOS == "darwin" {
+		Settings.Expire = time.Second
+	}
 }
 
 var previousDebugTime = time.Now()

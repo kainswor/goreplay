@@ -42,7 +42,7 @@ func NewMessage(srcAddr, dstAddr string, ipVersion uint8) (m *Message) {
 	m.DstAddr = dstAddr
 	m.SrcAddr = srcAddr
 	m.IPversion = ipVersion
-	m.done = make(chan bool, 1)
+	m.done = make(chan bool)
 	return
 }
 
@@ -172,8 +172,8 @@ func (pool *MessagePool) Handler(packet gopacket.Packet) {
 	}
 	pool.add(key, m)
 	m.Start = pckt.Timestamp
-	pool.addPacket(m, pckt)
 	go pool.dispatch(key, m)
+	pool.addPacket(m, pckt)
 }
 
 func (pool *MessagePool) dispatch(key string, m *Message) {

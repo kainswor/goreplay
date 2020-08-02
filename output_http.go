@@ -300,7 +300,7 @@ func (o *HTTPOutput) sendRequest(client *HTTPClient, request []byte) {
 	uuid := meta[1]
 
 	body := payloadBody(request)
-	if !proto.IsHTTPPayload(body) {
+	if !proto.HasRequestTitle(body) {
 		return
 	}
 

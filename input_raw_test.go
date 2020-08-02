@@ -25,7 +25,7 @@ func TestRAWInputIPv4(t *testing.T) {
 	wg := new(sync.WaitGroup)
 	quit := make(chan int)
 
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := net.Listen("tcp", ":0")
 	if err != nil {
 		t.Error(err)
 		return
@@ -39,6 +39,7 @@ func TestRAWInputIPv4(t *testing.T) {
 	}
 	go origin.Serve(listener)
 	defer listener.Close()
+	_, port, _ := net.SplitHostPort(listener.Addr().String())
 
 	var respCounter, reqCounter int64
 	conf := RAWInputConfig{
@@ -48,7 +49,7 @@ func TestRAWInputIPv4(t *testing.T) {
 		TrackResponse: true,
 		RealIPHeader:  "X-Real-IP",
 	}
-	input := NewRAWInput(listener.Addr().String(), conf)
+	input := NewRAWInput(":"+port, conf)
 
 	output := NewTestOutput(func(data []byte) {
 		if data[0] == '1' {
@@ -69,7 +70,7 @@ func TestRAWInputIPv4(t *testing.T) {
 	}
 	plugins.All = append(plugins.All, input, output)
 
-	client := NewHTTPClient(listener.Addr().String(), &HTTPClientConfig{})
+	client := NewHTTPClient("127.0.0.1:"+port, &HTTPClientConfig{})
 
 	emitter := NewEmitter(quit)
 	defer emitter.Close()
@@ -107,6 +108,7 @@ func TestRAWInputNoKeepAlive(t *testing.T) {
 	origin.SetKeepAlivesEnabled(false)
 	go origin.Serve(listener)
 	defer listener.Close()
+	_, port, _ := net.SplitHostPort(listener.Addr().String())
 
 	conf := RAWInputConfig{
 		Engine:        capture.EnginePcap,
@@ -114,7 +116,7 @@ func TestRAWInputNoKeepAlive(t *testing.T) {
 		Protocol:      ProtocolHTTP,
 		TrackResponse: true,
 	}
-	input := NewRAWInput(listener.Addr().String(), conf)
+	input := NewRAWInput(":"+port, conf)
 	var respCounter, reqCounter int64
 	output := NewTestOutput(func(data []byte) {
 		if data[0] == '1' {
@@ -131,7 +133,7 @@ func TestRAWInputNoKeepAlive(t *testing.T) {
 	}
 	plugins.All = append(plugins.All, input, output)
 
-	client := NewHTTPClient(listener.Addr().String(), &HTTPClientConfig{})
+	client := NewHTTPClient("127.0.0.1:"+port, &HTTPClientConfig{})
 
 	emitter := NewEmitter(quit)
 	go emitter.Start(plugins, Settings.Middleware)

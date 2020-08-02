@@ -69,9 +69,8 @@ func (o *KafkaOutput) Write(data []byte) (n int, err error) {
 		message = sarama.StringEncoder(data)
 	} else {
 		headers := make(map[string]string)
-		proto.ParseHeaders([][]byte{data}, func(header []byte, value []byte) bool {
+		proto.ParseHeaders([][]byte{data}, func(header []byte, value []byte) {
 			headers[string(header)] = string(value)
-			return true
 		})
 
 		meta := payloadMeta(data)
