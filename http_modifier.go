@@ -26,6 +26,7 @@ func NewHTTPModifier(config *HTTPModifierConfig) *HTTPModifier {
 		len(config.ParamHashFilters) == 0 &&
 		len(config.Params) == 0 &&
 		len(config.Headers) == 0 &&
+		len(config.DeleteHeaders) == 0 &&
 		len(config.Methods) == 0 {
 		return nil
 	}
@@ -58,6 +59,12 @@ func (m *HTTPModifier) Rewrite(payload []byte) (response []byte) {
 	if len(m.config.Headers) > 0 {
 		for _, header := range m.config.Headers {
 			payload = proto.SetHeader(payload, []byte(header.Name), []byte(header.Value))
+		}
+	}
+	
+	if len(m.config.DeleteHeaders) > 0 {
+		for _, header := range m.config.DeleteHeaders {
+			payload = proto.DeleteHeader(payload, []byte(header.Name))
 		}
 	}
 
