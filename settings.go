@@ -219,7 +219,7 @@ func init() {
 	flag.Var(&Settings.ModifierConfig.Headers, "http-set-header", "Inject additional headers to http reqest:\n\tgor --input-raw :8080 --output-http staging.com --http-set-header 'User-Agent: Gor'")
 	flag.Var(&Settings.ModifierConfig.Headers, "output-http-header", "WARNING: `--output-http-header` DEPRECATED, use `--http-set-header` instead")
 
-	flav.Var(&Settings.ModifierConfig.DropHeaders, "http-delete-header" "Remove headers before forwarding http request:\n\tgor --input-raw :8080 --output-http staging.com --http-delete-header 'RequestTrace'")
+	flav.Var(&Settings.ModifierConfig.DeleteHeaders, "http-delete-header" "Remove headers before forwarding http request:\n\tgor --input-raw :8080 --output-http staging.com --http-delete-header 'RequestTrace'")
 	flag.Var(&Settings.ModifierConfig.HeaderRewrite, "http-rewrite-header", "Rewrite the request header based on a mapping:\n\tgor --input-raw :8080 --output-http staging.com --http-rewrite-header Host: (.*).example.com,$1.beta.example.com")
 
 	flag.Var(&Settings.ModifierConfig.Params, "http-set-param", "Set request url param, if param already exists it will be overwritten:\n\tgor --input-raw :8080 --output-http staging.com --http-set-param api_key=1")
