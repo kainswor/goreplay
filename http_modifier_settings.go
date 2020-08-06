@@ -13,9 +13,10 @@ type HTTPModifierConfig struct {
 	UrlNegativeRegexp      HTTPUrlRegexp              `json:"http-disallow-url"`
 	UrlRegexp              HTTPUrlRegexp              `json:"http-allow-url"`
 	UrlRewrite             UrlRewriteMap              `json:"http-rewrite-url"`
+	DeleteHeaders          HTTPHeaders		  `json:"http-delete-header"`
 	HeaderRewrite          HeaderRewriteMap           `json:"http-rewrite-header"`
 	HeaderFilters          HTTPHeaderFilters          `json:"http-allow-header"`
-	HeaderNegativeFilters  HTTPHeaderFilters          `json:"http-disallow-header"`
+	HeaderHTTPHeaderFilters          `json:"http-disallow-header"`
 	HeaderBasicAuthFilters HTTPHeaderBasicAuthFilters `json:"http-basic-auth-filter"`
 	HeaderHashFilters      HTTPHashFilters            `json:"http-header-limiter"`
 	ParamHashFilters       HTTPHashFilters            `json:"http-param-limiter"`
@@ -150,6 +151,27 @@ func (h *HTTPHeaders) Set(value string) error {
 		strings.TrimSpace(v[1]),
 	}
 
+	*h = append(*h, header)
+	return nil
+}
+
+//
+// Handling of --http-delete-header option
+//
+type HTTPHeaderStubs []HTTPHeaderStub
+type HTTPHeaderStub struct {
+	Name string
+}
+
+func (h *HTTPHeaderStubs) String() string {
+	return fmt.Sprint(*h)
+}
+
+func (h *HTTPHeaderStubs) Set(value string) error {
+	header := HTTPHeader{
+		strings.TrimSpace(value),
+		"",
+	}
 	*h = append(*h, header)
 	return nil
 }
